@@ -1,17 +1,23 @@
 -- LOGGER.lua : surveille tous les trains, écrit sur disque + broadcast réseau
+-- Tourne sur un PC dédié connecté à GARE_TEST, un disque dur et une NetworkCard
+-- Détecte chaque arrivée/départ, enregistre durée + inventaire, diffuse sur port 42
+
+-- === INITIALISATION MATÉRIEL ===
 local net=computer.getPCIDevices(classes.NetworkCard)[1]
 local staList=component.findComponent("GARE_TEST")
 if not staList or not staList[1] then print("ERREUR: GARE_TEST non trouvee - verifie le cable reseau") end
 local sta=staList and staList[1] and component.proxy(staList[1])
-net:open(42)
+net:open(42)  -- port de broadcast vers DETAIL et autres scripts
 
+-- === DISQUE DUR ===
 local fs=filesystem
 fs.initFileSystem("/dev")
-fs.mount("/dev/6D014517486D381F93350594FFD39B23","/")
+fs.mount("/dev/6D014517486D381F93350594FFD39B23","/")  -- UUID du disque dur
 local TRIPS_FILE="/trips.json"
-local saved={}
+local saved={}  -- données en mémoire (miroir du disque)
 
--- Serialiseur Lua
+-- === SÉRIALISEUR LUA (remplace json absent dans FN) ===
+-- Convertit une valeur Lua (string/number/boolean/table) en chaîne de code Lua
 local function ser(v)
     local t=type(v)
     if t=="string" then return string.format("%q",v)
@@ -28,6 +34,7 @@ local function ser(v)
     return "nil"
 end
 
+-- Charge les données sauvegardées depuis le disque au démarrage
 local function loadSaved()
     if not fs.exists(TRIPS_FILE) then return end
     local ok,f=pcall(function()return fs.open(TRIPS_FILE,"r")end)
@@ -35,10 +42,12 @@ local function loadSaved()
     local ok2,s=pcall(function()return f:read("*a")end)
     f:close()
     if not ok2 or not s or s=="" then return end
+    -- Désérialise : évalue la chaîne Lua comme expression de retour
     local ok3,fn=pcall(load,"return "..s)
     if ok3 and fn then local ok4,d=pcall(fn) if ok4 and d then saved=d end end
 end
 
+-- Écrit la table `saved` sur le disque (écrase le fichier existant)
 local function writeDisk()
     local ok,f=pcall(function()return fs.open(TRIPS_FILE,"w")end)
     if not ok or not f then return end
@@ -47,7 +56,9 @@ local function writeDisk()
     f:close()
 end
 
--- Inventaire d'un train
+-- === LECTURE DE L'INVENTAIRE D'UN TRAIN ===
+-- Parcourt tous les wagons → toutes les inventaires → tous les slots
+-- Retourne une table {[nomItem]=quantité}
 local function inv(t)
     local it={}
     local ok,v=pcall(function()return t:getVehicles()end)
@@ -74,24 +85,26 @@ local function inv(t)
     return it
 end
 
--- Nombre de wagons
+-- Compte le nombre de wagons (véhicules) dans un train
 local function wagons(t)
     local ok,v=pcall(function()return t:getVehicles()end)
     if not ok or not v then return 0 end
     local n=0 for _ in pairs(v) do n=n+1 end return n
 end
 
--- Enregistrer et diffuser un trajet
--- Structure: saved[trainName][segKey] = { {duration,ts,inv,wagons}, ... } (10 max)
+-- === ENREGISTREMENT ET DIFFUSION D'UN TRAJET ===
+-- Structure disque: saved[trainName][segKey] = { {duration,ts,inv,wagons}, ... } (10 max)
+-- segKey = "GareA->GareB"
 local MAX_PER_SEG=10
 local function saveTrip(tn,fr,to,d,ts,it,nv)
     local seg=fr.."->"..to
     if not saved[tn] then saved[tn]={} end
     if not saved[tn][seg] then saved[tn][seg]={} end
+    -- Insère en tête (le plus récent en [1])
     table.insert(saved[tn][seg],1,{duration=d,ts=ts,inv=it,wagons=nv})
     while #saved[tn][seg]>MAX_PER_SEG do table.remove(saved[tn][seg]) end
     writeDisk()
-    -- Broadcast réseau
+    -- Broadcast réseau vers DETAIL (et autres scripts abonnés au port 42)
     local ok,invs=pcall(function()return ser(it)end)
     local invStr=ok and invs or "{}"
     pcall(function()net:broadcast(42,tn,fr,to,d,ts,invStr)end)
@@ -100,11 +113,12 @@ local function saveTrip(tn,fr,to,d,ts,it,nv)
     print("LOG: "..tn.." "..seg.." d="..d.."s wagons="..nv..invLog)
 end
 
--- État par train
-local la={}         -- {[tn]={from, t}}   : gare + heure d'arrivée
-local depart={}     -- {[tn]=inv}          : inventaire capturé au départ
-local dk_prev={}
+-- === ÉTAT PAR TRAIN (mis à jour à chaque tick) ===
+local la={}         -- {[tn]={from, t}}   : dernière gare + timestamp d'arrivée
+local depart={}     -- {[tn]=inv}          : inventaire capturé au moment du départ
+local dk_prev={}    -- {[tn]=bool}         : état isDocked du tick précédent
 
+-- === BOUCLE DE SURVEILLANCE (appelée toutes les 2s) ===
 local function tick()
     if not sta then return end
     local ok,trains=pcall(function()return sta:getTrackGraph():getTrains()end)
@@ -115,7 +129,8 @@ local function tick()
         if ok2 and m then
             local tn=t:getName()
             local dk=m.isDocked
-            -- Timetable : gare courante
+
+            -- Récupère le nom de la gare courante via le timetable
             local cur="?"
             pcall(function()
                 local tt=t:getTimeTable()
@@ -123,35 +138,42 @@ local function tick()
                 local st=tt:getStop(ci)
                 cur=st.station.name
             end)
-            -- Arrivée en gare : enregistre le trajet
+
+            -- Arrivée détectée : le train est à quai dans une nouvelle gare
             if dk then
                 local ls=la[tn]
                 if ls and ls.from~=cur then
                     local d=math.floor(now-ls.t)
+                    -- Filtre les trajets aberrants (<5s ou >2h)
                     if d>5 and d<7200 then
                         local nv=wagons(t)
                         saveTrip(tn,ls.from,cur,d,math.floor(now),depart[tn] or {},nv)
                     end
                 end
+                -- Mémorise cette gare comme point de départ du prochain trajet
                 if not la[tn] or la[tn].from~=cur then
                     la[tn]={from=cur,t=now}
                 end
             end
-            -- Départ de gare : capture l'inventaire après chargement
+
+            -- Départ détecté (isDocked: true→false) : capture l'inventaire après chargement
             if dk_prev[tn]==true and not dk then
                 depart[tn]=inv(t)
             end
+
             dk_prev[tn]=dk
         end
     end
 end
 
-loadSaved()
+-- === DÉMARRAGE ===
+loadSaved()  -- restaure les données précédentes depuis le disque
 local trainCount=0
 if sta then pcall(function()trainCount=#sta:getTrackGraph():getTrains()end) end
 print("LOGGER démarré - "..trainCount.." trains détectés")
 
+-- === BOUCLE PRINCIPALE ===
 while true do
     tick()
-    event.pull(2)
+    event.pull(2)  -- attend 2s (ou un événement réseau non utilisé ici)
 end
