@@ -2,6 +2,7 @@ local gpu=computer.getPCIDevices(classes.Build_GPU_T2_C)[1]
 local scr=component.proxy(component.findComponent("DETAIL_SCREEN_R")[1])
 local sta=component.proxy(component.findComponent("GARE_TEST")[1])
 local pan=component.proxy(component.findComponent("DETAIL_PANEL")[1])
+local net=computer.getPCIDevices(classes.NetworkCard)[1]
 gpu:bindScreen(scr)
 local sw,sh=600,900
 local BG={r=0,g=0,b=0,a=1}
@@ -15,8 +16,11 @@ local BL={r=0.2,g=0.6,b=1,a=1}
 local SP={r=0.15,g=0.15,b=0.15,a=1}
 local bP=pan:getModule(0,0,0)
 local bN=pan:getModule(0,1,0)
-event.listen(bP) event.listen(bN)
+event.listen(bP) event.listen(bN) event.listen(net)
+net:open(42)
 local idx=1 local tl={} local tm={} local la={} local dp={} local dk_prev={}
+local saved={} -- {[trainName]=[{from,to,duration,ts,inventory,wagons},...]}
+
 local function ref() tl=sta:getTrackGraph():getTrains() end
 local function tti(t)
     local ok,tt=pcall(function()return t:getTimeTable()end)
@@ -32,31 +36,6 @@ local function tti(t)
     end
     return ci,n
 end
-local function inv(t)
-    local it={}
-    local ok,v=pcall(function()return t:getVehicles()end)
-    if not ok or not v then return it end
-    for vi=1,#v do
-        local vh=v[vi]
-        local ok2,iv=pcall(function()return vh:getInventories()end)
-        if ok2 and iv then
-            for ji=1,#iv do
-                local i=iv[ji]
-                if i and i.itemCount>0 then
-                    for si=0,i.size-1 do
-                        local ok3,x=pcall(function()return i:getStack(si)end)
-                        if ok3 and x and x.count>0 then
-                            local ok4,nm=pcall(function()return x.item.type.name end)
-                            local n=ok4 and nm or "???"
-                            it[n]=(it[n] or 0)+x.count
-                        end
-                    end
-                end
-            end
-        end
-    end
-    return it
-end
 local function upd(tn,fr,to,d)
     if not tm[tn] then tm[tn]={} end
     local k=fr.."->"..to
@@ -69,6 +48,18 @@ local function eta(tn,fr,to)
     if not k or k.c==0 then return nil end
     return math.floor(k.t/k.c)
 end
+
+-- Réception d'un trajet depuis LOGGER
+local function onTrip(tn,fr,to,d,ts,invStr)
+    if not saved[tn] then saved[tn]={} end
+    local it={}
+    local ok,fn=pcall(load,"return "..invStr)
+    if ok and fn then local ok2,r=pcall(fn) if ok2 and r then it=r end end
+    table.insert(saved[tn],1,{from=fr,to=to,duration=d,ts=ts,inventory=it})
+    while #saved[tn]>5 do table.remove(saved[tn]) end
+    upd(tn,fr,to,d) -- alimente aussi le calcul ETA
+end
+
 local function fmt(s) return string.format("%d:%02d",math.floor(s/60),s%60) end
 local function sep(y) gpu:drawRect({x=10,y=y},{x=sw-20,y=1},SP,SP,0) end
 local function draw()
@@ -148,12 +139,13 @@ local function draw()
     else gpu:drawText({x=10,y=y},"Pas de timetable",17,DI,false) end
     y=y+6 sep(y) y=y+10
     gpu:drawText({x=10,y=y},"INVENTAIRE",19,OR,false) y=y+26
-    local it=inv(t) local has=false
+    local it=(saved[tn] and saved[tn][1] and saved[tn][1].inventory) or {}
+    local has=false
     for nm,cnt in pairs(it) do
         if y>sh-40 then break end
         gpu:drawText({x=10,y=y},nm.."  x"..cnt,17,WH,false) y=y+21 has=true
     end
-    if not has then gpu:drawText({x=10,y=y},"Vide",17,DI,false) end
+    if not has then gpu:drawText({x=10,y=y},"En attente LOGGER...",17,DI,false) end
     gpu:drawRect({x=0,y=sh-35},{x=sw,y=35},BG,BG,0)
     local cnt=idx.." / "..#tl
     local cx=math.floor((sw-#cnt*11)/2)
@@ -167,11 +159,13 @@ for _,t in pairs(tl) do
 end
 while true do
     draw()
-    local e,src=event.pull(2)
+    local e,src,sender,port,tn,fr,to,d,ts,invStr=event.pull(2)
     if e=="Trigger" then
         if src==bN then idx=idx+1 end
         if src==bP then idx=idx-1 end
         if idx>#tl then idx=1 end
         if idx<1 then idx=#tl end
+    elseif e=="NetworkMessage" and port==42 then
+        onTrip(tn,fr,to,d,ts,invStr)
     end
 end
