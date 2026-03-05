@@ -17,22 +17,27 @@ WEB_JSON = os.path.join(DISK, "web.json")
 # Répertoire contenant ce script (pour servir index.html)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+# Cache : dernière donnée valide lue — évite les pages blanches lors des écritures Lua
+_cache = {"trains": [], "trips": {}}
+
 
 @app.route("/api/data")
 def get_data():
-    """Retourne web.json tel que LOGGER l'a écrit (trains + trips)."""
+    """Retourne web.json tel que LOGGER l'a écrit (trains + trips).
+    En cas de lecture pendant une écriture Lua (JSON tronqué), retourne le cache."""
+    global _cache
     try:
         with open(WEB_JSON, "r", encoding="utf-8") as f:
             data = json.load(f)
+        _cache = data  # mise à jour du cache uniquement si JSON valide
         return jsonify(data)
     except FileNotFoundError:
-        # LOGGER pas encore démarré ou web.json pas encore créé
-        return jsonify({"trains": [], "trips": {}, "error": "web.json introuvable — LOGGER tourne ?"}), 200
-    except json.JSONDecodeError as e:
-        # Lecture en cours d'écriture par Lua (race condition rare)
-        return jsonify({"trains": [], "trips": {}, "error": f"JSON invalide : {e}"}), 200
+        return jsonify({**_cache, "error": "web.json introuvable — LOGGER tourne ?"}), 200
+    except (json.JSONDecodeError, ValueError):
+        # Race condition : Lua écrit pendant qu'on lit → on retourne le cache
+        return jsonify(_cache), 200
     except Exception as e:
-        return jsonify({"trains": [], "trips": {}, "error": str(e)}), 500
+        return jsonify({**_cache, "error": str(e)}), 200
 
 
 @app.route("/")
