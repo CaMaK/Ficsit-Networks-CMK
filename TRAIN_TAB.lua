@@ -6,11 +6,20 @@
 -- Prérequis : une NetworkCard installée dans le PC TRAIN_TAB
 
 -- === INITIALISATION MATÉRIEL ===
-local net=computer.getPCIDevices(classes.NetworkCard)[1]
+local function findProxy(name)
+    local list=component.findComponent(name)
+    assert(list and list[1],"Composant '"..name.."' non trouve - verifie le cable reseau")
+    return component.proxy(list[1])
+end
+
+local nets=computer.getPCIDevices(classes.NetworkCard)
+assert(nets and nets[1],"NetworkCard non trouvee - installe une carte reseau dans ce PC")
+local net=nets[1]
+
 local gpus=computer.getPCIDevices(classes.Build_GPU_T2_C)
-local scrL=component.proxy(component.findComponent("SCREEN_L")[1])
-local scrC=component.proxy(component.findComponent("SCREEN_C")[1])
-local scrR=component.proxy(component.findComponent("SCREEN_R")[1])
+local scrL=findProxy("SCREEN_L")
+local scrC=findProxy("SCREEN_C")
+local scrR=findProxy("SCREEN_R")
 
 local gpuL=gpus[1]
 local gpuC=gpus[2]
