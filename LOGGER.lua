@@ -22,8 +22,9 @@ fs.mount("/dev/6D014517486D381F93350594FFD39B23","/")  -- UUID du disque dur
 local TRIPS_FILE="/trips.json"
 local saved={}  -- données en mémoire (miroir du disque)
 
--- === SÉRIALISEUR LUA (remplace json absent dans FN) ===
--- Convertit une valeur Lua (string/number/boolean/table) en chaîne de code Lua
+-- === SÉRIALISEURS ===
+-- ser() : format Lua pour lecture/écriture interne (trips.json)
+-- toJson() : format JSON valide pour lecture par Python (web.json)
 local function ser(v)
     local t=type(v)
     if t=="string" then return string.format("%q",v)
@@ -40,6 +41,25 @@ local function ser(v)
     return "nil"
 end
 
+-- Convertit une valeur Lua en JSON valide (pour web.json lisible par Python)
+local function toJson(v)
+    local t=type(v)
+    if t=="string" then return '"'..v:gsub('\\','\\\\'):gsub('"','\\"')..'"'
+    elseif t=="number" then return tostring(v)
+    elseif t=="boolean" then return tostring(v)
+    elseif t=="table" then
+        local n=0 for _ in pairs(v) do n=n+1 end
+        if n>0 and n==#v then  -- tableau séquentiel → array JSON
+            local p={} for _,val in ipairs(v) do table.insert(p,toJson(val)) end
+            return "["..table.concat(p,",").."]"
+        else  -- clés mixtes → objet JSON
+            local p={} for k,val in pairs(v) do table.insert(p,'"'..tostring(k)..'":'..toJson(val)) end
+            return "{"..table.concat(p,",").."}"
+        end
+    end
+    return "null"
+end
+
 -- Charge les données sauvegardées depuis le disque au démarrage
 local function loadSaved()
     if not fs.exists(TRIPS_FILE) then return end
@@ -53,11 +73,25 @@ local function loadSaved()
     if ok3 and fn then local ok4,d=pcall(fn) if ok4 and d then saved=d end end
 end
 
--- Écrit la table `saved` sur le disque (écrase le fichier existant)
+-- Écrit la table `saved` sur le disque au format Lua (écrase le fichier existant)
 local function writeDisk()
     local ok,f=pcall(function()return fs.open(TRIPS_FILE,"w")end)
     if not ok or not f then return end
     local ok2,s=pcall(function()return ser(saved)end)
+    if ok2 and s then f:write(s) end
+    f:close()
+end
+
+-- Écrit le snapshot temps réel + historique en JSON pour le serveur web Python
+-- Fichier : /web.json (même disque que trips.json)
+local state={}  -- {[tn]={name,speed,status,station,wagons}} — mis à jour chaque tick
+local function writeWeb()
+    local trainArr={} for _,s in pairs(state) do table.insert(trainArr,s) end
+    local ok,f=pcall(function()return fs.open("/web.json","w")end)
+    if not ok or not f then return end
+    local ok2,s=pcall(function()
+        return toJson({trains=trainArr,trips=saved})
+    end)
     if ok2 and s then f:write(s) end
     f:close()
 end
@@ -130,6 +164,7 @@ local function tick()
     local ok,trains=pcall(function()return sta:getTrackGraph():getTrains()end)
     if not ok or not trains then return end
     local now=computer.millis()/1000
+    state={}  -- reset snapshot temps réel à chaque tick
     for _,t in pairs(trains) do
         local ok2,m=pcall(function()return t:getMaster()end)
         if ok2 and m then
@@ -144,6 +179,13 @@ local function tick()
                 local st=tt:getStop(ci)
                 cur=st.station.name
             end)
+
+            -- Collecte l'état temps réel du train pour web.json
+            local spd=0
+            pcall(function()spd=math.abs(math.floor(m:getMovement().speed/100*3.6))end)
+            local nv=wagons(t)
+            local st=dk and "docked" or (spd>10 and "moving" or "stopped")
+            state[tn]={name=tn,speed=spd,status=st,station=cur,wagons=nv}
 
             -- Arrivée détectée : le train est à quai dans une nouvelle gare
             if dk then
@@ -170,6 +212,7 @@ local function tick()
             dk_prev[tn]=dk
         end
     end
+    writeWeb()  -- écrit web.json après chaque tick
 end
 
 -- Re-diffuse tous les derniers trajets connus sur le réseau
@@ -208,3 +251,4 @@ while true do
     end
     event.pull(2)
 end
+zd

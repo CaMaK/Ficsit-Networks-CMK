@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Train Monitor — Satisfactory</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #080808; color: #ddd; font-family: 'Segoe UI', 'Consolas', monospace; min-height: 100vh; }
+
+/* ── HEADER ── */
+header {
+    background: #111; padding: 14px 24px;
+    display: flex; justify-content: space-between; align-items: center;
+    border-bottom: 2px solid #1e1e1e; position: sticky; top: 0; z-index: 10;
+}
+header h1 { color: #ff8800; font-size: 1.25em; letter-spacing: 3px; font-weight: 700; }
+#status { font-size: 0.82em; color: #444; transition: color .3s; }
+#status.ok { color: #33cc55; }
+#status.err { color: #ff4444; }
+
+/* ── COLONNES TRAINS ── */
+.columns {
+    display: grid; grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px; padding: 16px;
+}
+.col { background: #111; border-radius: 8px; overflow: hidden; }
+.col-header {
+    padding: 12px 16px; font-size: 0.82em; font-weight: 700;
+    letter-spacing: 1.5px; display: flex; justify-content: space-between; align-items: center;
+}
+.col-header.moving  { background:#091209; color:#33ff55; border-bottom:2px solid #33ff55; }
+.col-header.docked  { background:#09090f; color:#4499ff; border-bottom:2px solid #4499ff; }
+.col-header.stopped { background:#120909; color:#ff4444; border-bottom:2px solid #ff4444; }
+.badge {
+    background: rgba(255,255,255,0.08); border-radius: 12px;
+    padding: 2px 10px; font-size: 0.9em;
+}
+.train-row {
+    padding: 9px 14px; border-bottom: 1px solid #161616;
+    display: flex; flex-direction: column; gap: 3px;
+}
+.train-row:last-child { border-bottom: none; }
+.train-name { color: #fff; font-size: 0.9em; font-weight: 600; }
+.train-sub  { color: #666; font-size: 0.76em; }
+.train-sub span { margin-right: 10px; }
+.spd-fast { color: #33ff55; }
+.spd-slow { color: #ffff33; }
+.spd-none { color: #ff4444; }
+.clr-blue { color: #4499ff; }
+.empty-row { padding: 12px 14px; color: #333; font-size: 0.8em; font-style: italic; }
+
+/* ── SECTION HISTORIQUE ── */
+.trips-section { padding: 0 16px 24px; }
+.trips-section h2 {
+    color: #ff8800; font-size: 0.85em; letter-spacing: 2px;
+    margin-bottom: 10px; padding-top: 4px;
+}
+.train-card { background: #111; border-radius: 8px; margin-bottom: 8px; overflow: hidden; }
+.train-card-header {
+    padding: 10px 16px; cursor: pointer;
+    display: flex; justify-content: space-between; align-items: center;
+    background: #141414; user-select: none;
+    transition: background .15s;
+}
+.train-card-header:hover { background: #1a1a1a; }
+.train-card-header .tname { color: #ccc; font-size: 0.88em; font-weight: 600; }
+.train-card-header .tmeta { color: #444; font-size: 0.78em; }
+.train-card-header .arrow { color: #444; font-size: 0.8em; transition: transform .2s; }
+.train-card-header.open .arrow { transform: rotate(90deg); }
+.segments { display: none; padding: 8px; }
+.segments.open { display: block; }
+.segment {
+    margin-bottom: 6px; padding: 8px 12px;
+    background: #0c0c0c; border-radius: 6px;
+    border-left: 3px solid #2255aa;
+}
+.seg-title { color: #4499ff; font-size: 0.8em; font-weight: 600; margin-bottom: 3px; }
+.seg-stats { color: #666; font-size: 0.74em; }
+.seg-inv   { color: #888; font-size: 0.74em; margin-top: 4px; }
+.seg-inv span { margin-right: 10px; }
+
+/* ── FOOTER ── */
+#footer { position: fixed; bottom: 8px; right: 14px; color: #282828; font-size: 0.72em; }
+</style>
+</head>
+<body>
+
+<header>
+    <h1>TRAIN MONITOR</h1>
+    <span id="status">Connexion...</span>
+</header>
+
+<div class="columns">
+    <div class="col">
+        <div class="col-header moving">EN MOUVEMENT <span class="badge" id="cnt-moving">0</span></div>
+        <div id="col-moving"></div>
+    </div>
+    <div class="col">
+        <div class="col-header docked">À QUAI <span class="badge" id="cnt-docked">0</span></div>
+        <div id="col-docked"></div>
+    </div>
+    <div class="col">
+        <div class="col-header stopped">À L'ARRÊT <span class="badge" id="cnt-stopped">0</span></div>
+        <div id="col-stopped"></div>
+    </div>
+</div>
+
+<div class="trips-section">
+    <h2>HISTORIQUE DES TRAJETS</h2>
+    <div id="trips-list"></div>
+</div>
+
+<div id="footer">—</div>
+
+<script>
+// ── Utilitaires ──────────────────────────────────────────────
+function fmt(sec) {
+    sec = Math.max(0, Math.round(sec));
+    const m = Math.floor(sec / 60), s = sec % 60;
+    return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+// ── Rendu colonnes temps réel ────────────────────────────────
+function renderTrains(trains) {
+    const groups = { moving: [], docked: [], stopped: [] };
+    trains.forEach(t => (groups[t.status] || groups.stopped).push(t));
+    groups.moving.sort((a, b) => b.speed - a.speed);
+
+    document.getElementById('cnt-moving').textContent  = groups.moving.length;
+    document.getElementById('cnt-docked').textContent  = groups.docked.length;
+    document.getElementById('cnt-stopped').textContent = groups.stopped.length;
+
+    const empty = '<div class="empty-row">Aucun</div>';
+
+    document.getElementById('col-moving').innerHTML = groups.moving.length
+        ? groups.moving.map(t => `
+            <div class="train-row">
+                <div class="train-name">${esc(t.name)}</div>
+                <div class="train-sub">
+                    <span class="${t.speed > 100 ? 'spd-fast' : 'spd-slow'}">${t.speed} km/h</span>
+                    <span>→ ${esc(t.station)}</span>
+                    <span>${t.wagons} wagon${t.wagons > 1 ? 's' : ''}</span>
+                </div>
+            </div>`).join('') : empty;
+
+    document.getElementById('col-docked').innerHTML = groups.docked.length
+        ? groups.docked.map(t => `
+            <div class="train-row">
+                <div class="train-name">${esc(t.name)}</div>
+                <div class="train-sub">
+                    <span class="clr-blue">${esc(t.station)}</span>
+                    <span>${t.wagons} wagon${t.wagons > 1 ? 's' : ''}</span>
+                </div>
+            </div>`).join('') : empty;
+
+    document.getElementById('col-stopped').innerHTML = groups.stopped.length
+        ? groups.stopped.map(t => `
+            <div class="train-row">
+                <div class="train-name">${esc(t.name)}</div>
+                <div class="train-sub">
+                    <span class="spd-none">Arrêté</span>
+                    <span>${esc(t.station)}</span>
+                    <span>${t.wagons} wagon${t.wagons > 1 ? 's' : ''}</span>
+                </div>
+            </div>`).join('') : empty;
+}
+
+// ── Rendu historique (collapsible) ───────────────────────────
+// Mémorise les sections ouvertes entre les refreshs
+const openCards = new Set();
+
+function renderTrips(trips) {
+    const container = document.getElementById('trips-list');
+    const entries = Object.entries(trips || {});
+    if (!entries.length) {
+        container.innerHTML = '<div class="empty-row">Aucun trajet enregistré</div>';
+        return;
+    }
+
+    let html = '';
+    for (const [trainName, segs] of entries) {
+        const isOpen = openCards.has(trainName);
+        const segEntries = Object.entries(segs || {});
+        let segHtml = '';
+
+        for (const [seg, tripArr] of segEntries) {
+            if (!tripArr || !tripArr.length) continue;
+            const durations = tripArr.map(t => Number(t.duration));
+            const mn = Math.min(...durations), mx = Math.max(...durations);
+            const avg = Math.floor(durations.reduce((a, b) => a + b, 0) / durations.length);
+            const last = tripArr[0];
+            const invParts = last.inv ? Object.entries(last.inv).map(([k, v]) => `<span>${esc(k)} ×${v}</span>`).join('') : '';
+
+            segHtml += `
+                <div class="segment">
+                    <div class="seg-title">${esc(seg)} &nbsp;(${tripArr.length} trajet${tripArr.length > 1 ? 's' : ''})</div>
+                    <div class="seg-stats">min ${fmt(mn)} · moy ${fmt(avg)} · max ${fmt(mx)} · ${last.wagons || '?'} wagon${last.wagons > 1 ? 's' : ''}</div>
+                    ${invParts ? `<div class="seg-inv">${invParts}</div>` : ''}
+                </div>`;
+        }
+
+        html += `
+            <div class="train-card">
+                <div class="train-card-header ${isOpen ? 'open' : ''}" onclick="toggleCard(this,'${esc(trainName).replace(/'/g,"\\'")}')">
+                    <span class="tname">${esc(trainName)}</span>
+                    <span class="tmeta">${segEntries.length} segment${segEntries.length > 1 ? 's' : ''}</span>
+                    <span class="arrow">▶</span>
+                </div>
+                <div class="segments ${isOpen ? 'open' : ''}">${segHtml || '<div class="empty-row">Aucun segment</div>'}</div>
+            </div>`;
+    }
+    container.innerHTML = html;
+}
+
+function toggleCard(el, name) {
+    const seg = el.nextElementSibling;
+    const open = !seg.classList.contains('open');
+    seg.classList.toggle('open', open);
+    el.classList.toggle('open', open);
+    open ? openCards.add(name) : openCards.delete(name);
+}
+
+// ── Échappement HTML basique ─────────────────────────────────
+function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Boucle de rafraîchissement ───────────────────────────────
+let errors = 0;
+
+async function refresh() {
+    try {
+        const r = await fetch('/api/data');
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const data = await r.json();
+        errors = 0;
+
+        const st = document.getElementById('status');
+        st.textContent = '● En direct';
+        st.className = 'ok';
+
+        renderTrains(data.trains || []);
+        renderTrips(data.trips || {});
+
+        document.getElementById('footer').textContent =
+            'Dernière mise à jour : ' + new Date().toLocaleTimeString();
+
+        if (data.error) console.warn('LOGGER:', data.error);
+    } catch (e) {
+        errors++;
+        const st = document.getElementById('status');
+        st.textContent = `⚠ Erreur serveur (${errors})`;
+        st.className = 'err';
+    }
+}
+
+// Premier appel immédiat, puis toutes les 2s
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>
