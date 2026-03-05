@@ -108,7 +108,10 @@ def build_message():
     lines.append("")
     lines.append(f"  {total} train{'s' if total != 1 else ''} sur le reseau — {now}")
 
-    return "```\n" + "\n".join(lines) + "\n```"
+    content = "```\n" + "\n".join(lines) + "\n```"
+    if len(content) > 1990:
+        content = content[:1987] + "…```"
+    return content
 
 
 @client.event
