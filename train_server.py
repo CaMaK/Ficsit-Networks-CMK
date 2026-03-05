@@ -43,5 +43,5 @@ def index():
 
 if __name__ == "__main__":
     print(f"Lecture de : {WEB_JSON}")
-    print("Dashboard disponible sur http://localhost:6666")
-    app.run(host="0.0.0.0", port=6666, debug=False)
+    print("Dashboard disponible sur http://localhost:8081")
+    app.run(host="0.0.0.0", port=8081, debug=False)

@@ -251,4 +251,3 @@ while true do
     end
     event.pull(2)
 end
-zd
