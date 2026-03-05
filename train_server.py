@@ -111,7 +111,11 @@ def build_embed():
             f"　🟢 **{len(groups['moving'])}** mouvement"
             f"　🔵 **{len(groups['docked'])}** quai\n\u200b"
         ),
-        color=0xff8800
+        color=(
+            0x33cc55 if len(groups["moving"]) > len(groups["stopped"])
+            else 0xff4444 if len(groups["stopped"]) > len(groups["moving"])
+            else 0xff8800
+        )
     )
     embed.add_field(
         name=f"🔴 À L'ARRÊT ({len(groups['stopped'])})",
