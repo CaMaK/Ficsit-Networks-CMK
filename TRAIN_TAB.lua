@@ -8,9 +8,9 @@
 -- === INITIALISATION MATÉRIEL ===
 local net=computer.getPCIDevices(classes.NetworkCard)[1]
 local gpus=computer.getPCIDevices(classes.Build_GPU_T2_C)
-local scrL=component.proxy(component.findComponent("SCREEN_L")[1])
-local scrC=component.proxy(component.findComponent("SCREEN_C")[1])
-local scrR=component.proxy(component.findComponent("SCREEN_R")[1])
+local scrL=component.proxy(component.findComponent("TAB_SCREEN_L")[1])
+local scrC=component.proxy(component.findComponent("TAB_SCREEN_C")[1])
+local scrR=component.proxy(component.findComponent("TAB_SCREEN_R")[1])
 
 local gpuL=gpus[1]
 local gpuC=gpus[2]
