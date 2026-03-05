@@ -10,19 +10,38 @@ body { background: #080808; color: #ddd; font-family: 'Segoe UI', 'Consolas', mo
 
 /* ── HEADER ── */
 header {
-    background: #111; padding: 14px 24px;
-    display: flex; justify-content: space-between; align-items: center;
+    background: #111; padding: 14px 24px 0;
     border-bottom: 2px solid #1e1e1e; position: sticky; top: 0; z-index: 10;
+}
+.header-top {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 12px;
 }
 header h1 { color: #ff8800; font-size: 1.25em; letter-spacing: 3px; font-weight: 700; }
 #status { font-size: 0.82em; color: #444; transition: color .3s; }
-#status.ok { color: #33cc55; }
+#status.ok  { color: #33cc55; }
 #status.err { color: #ff4444; }
+
+/* ── ONGLETS ── */
+.tabs { display: flex; gap: 4px; }
+.tab {
+    padding: 8px 20px; cursor: pointer; font-size: 0.82em; font-weight: 600;
+    letter-spacing: 1px; border-radius: 6px 6px 0 0;
+    color: #555; background: transparent; border: none;
+    border-bottom: 2px solid transparent; transition: color .15s, border-color .15s;
+    user-select: none;
+}
+.tab:hover { color: #999; }
+.tab.active { color: #ff8800; border-bottom: 2px solid #ff8800; }
+
+/* ── PAGES ── */
+.page { display: none; padding: 16px; }
+.page.active { display: block; }
 
 /* ── COLONNES TRAINS ── */
 .columns {
     display: grid; grid-template-columns: 1fr 1fr 1fr;
-    gap: 12px; padding: 16px;
+    gap: 12px;
 }
 .col { background: #111; border-radius: 8px; overflow: hidden; }
 .col-header {
@@ -50,18 +69,12 @@ header h1 { color: #ff8800; font-size: 1.25em; letter-spacing: 3px; font-weight:
 .clr-blue { color: #4499ff; }
 .empty-row { padding: 12px 14px; color: #333; font-size: 0.8em; font-style: italic; }
 
-/* ── SECTION HISTORIQUE ── */
-.trips-section { padding: 0 16px 24px; }
-.trips-section h2 {
-    color: #ff8800; font-size: 0.85em; letter-spacing: 2px;
-    margin-bottom: 10px; padding-top: 4px;
-}
+/* ── HISTORIQUE ── */
 .train-card { background: #111; border-radius: 8px; margin-bottom: 8px; overflow: hidden; }
 .train-card-header {
     padding: 10px 16px; cursor: pointer;
     display: flex; justify-content: space-between; align-items: center;
-    background: #141414; user-select: none;
-    transition: background .15s;
+    background: #141414; user-select: none; transition: background .15s;
 }
 .train-card-header:hover { background: #1a1a1a; }
 .train-card-header .tname { color: #ccc; font-size: 0.88em; font-weight: 600; }
@@ -72,13 +85,25 @@ header h1 { color: #ff8800; font-size: 1.25em; letter-spacing: 3px; font-weight:
 .segments.open { display: block; }
 .segment {
     margin-bottom: 6px; padding: 8px 12px;
-    background: #0c0c0c; border-radius: 6px;
-    border-left: 3px solid #2255aa;
+    background: #0c0c0c; border-radius: 6px; border-left: 3px solid #2255aa;
 }
 .seg-title { color: #4499ff; font-size: 0.8em; font-weight: 600; margin-bottom: 3px; }
 .seg-stats { color: #666; font-size: 0.74em; }
 .seg-inv   { color: #888; font-size: 0.74em; margin-top: 4px; }
 .seg-inv span { margin-right: 10px; }
+
+/* ── STATISTIQUES (placeholder) ── */
+.stats-placeholder {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;
+}
+.stat-card {
+    background: #111; border-radius: 8px; padding: 20px;
+    border: 1px dashed #222; display: flex; flex-direction: column; gap: 8px;
+    min-height: 120px;
+}
+.stat-card-title { color: #555; font-size: 0.78em; letter-spacing: 1.5px; font-weight: 700; }
+.stat-card-value { color: #333; font-size: 1.8em; font-weight: 700; }
+.stat-card-note  { color: #2a2a2a; font-size: 0.72em; font-style: italic; margin-top: auto; }
 
 /* ── FOOTER ── */
 #footer { position: fixed; bottom: 8px; right: 14px; color: #282828; font-size: 0.72em; }
@@ -87,38 +112,96 @@ header h1 { color: #ff8800; font-size: 1.25em; letter-spacing: 3px; font-weight:
 <body>
 
 <header>
-    <h1>TRAIN MONITOR</h1>
-    <span id="status">Connexion...</span>
+    <div class="header-top">
+        <h1>TRAIN MONITOR</h1>
+        <span id="status">Connexion...</span>
+    </div>
+    <nav class="tabs">
+        <button class="tab active" onclick="switchTab('monitor', this)">EN DIRECT</button>
+        <button class="tab" onclick="switchTab('history', this)">HISTORIQUE</button>
+        <button class="tab" onclick="switchTab('stats', this)">STATISTIQUES</button>
+    </nav>
 </header>
 
-<div class="columns">
-    <div class="col">
-        <div class="col-header stopped">À L'ARRÊT <span class="badge" id="cnt-stopped">0</span></div>
-        <div id="col-stopped"></div>
-    </div>
-    <div class="col">
-        <div class="col-header moving">EN MOUVEMENT <span class="badge" id="cnt-moving">0</span></div>
-        <div id="col-moving"></div>
-    </div>
-    <div class="col">
-        <div class="col-header docked">À QUAI <span class="badge" id="cnt-docked">0</span></div>
-        <div id="col-docked"></div>
+<!-- ── ONGLET EN DIRECT ── -->
+<div id="page-monitor" class="page active">
+    <div class="columns">
+        <div class="col">
+            <div class="col-header stopped">À L'ARRÊT <span class="badge" id="cnt-stopped">0</span></div>
+            <div id="col-stopped"></div>
+        </div>
+        <div class="col">
+            <div class="col-header moving">EN MOUVEMENT <span class="badge" id="cnt-moving">0</span></div>
+            <div id="col-moving"></div>
+        </div>
+        <div class="col">
+            <div class="col-header docked">À QUAI <span class="badge" id="cnt-docked">0</span></div>
+            <div id="col-docked"></div>
+        </div>
     </div>
 </div>
 
-<div class="trips-section">
-    <h2>HISTORIQUE DES TRAJETS</h2>
+<!-- ── ONGLET HISTORIQUE ── -->
+<div id="page-history" class="page">
     <div id="trips-list"></div>
+</div>
+
+<!-- ── ONGLET STATISTIQUES ── -->
+<div id="page-stats" class="page">
+    <div class="stats-placeholder">
+        <div class="stat-card">
+            <div class="stat-card-title">TRAJETS TOTAUX</div>
+            <div class="stat-card-value" id="stat-total-trips">—</div>
+            <div class="stat-card-note">À venir</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-card-title">TRAINS ACTIFS</div>
+            <div class="stat-card-value" id="stat-active">—</div>
+            <div class="stat-card-note">À venir</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-card-title">VITESSE MOYENNE</div>
+            <div class="stat-card-value" id="stat-avg-speed">—</div>
+            <div class="stat-card-note">À venir</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-card-title">SEGMENT LE PLUS RAPIDE</div>
+            <div class="stat-card-value" id="stat-fastest">—</div>
+            <div class="stat-card-note">À venir</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-card-title">SEGMENT LE PLUS LENT</div>
+            <div class="stat-card-value" id="stat-slowest">—</div>
+            <div class="stat-card-note">À venir</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-card-title">UPTIME RÉSEAU</div>
+            <div class="stat-card-value" id="stat-uptime">—</div>
+            <div class="stat-card-note">À venir</div>
+        </div>
+    </div>
 </div>
 
 <div id="footer">—</div>
 
 <script>
+// ── Navigation onglets ───────────────────────────────────────
+function switchTab(name, btn) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.getElementById('page-' + name).classList.add('active');
+    btn.classList.add('active');
+}
+
 // ── Utilitaires ──────────────────────────────────────────────
 function fmt(sec) {
     sec = Math.max(0, Math.round(sec));
     const m = Math.floor(sec / 60), s = sec % 60;
     return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 // ── Rendu colonnes temps réel ────────────────────────────────
@@ -164,10 +247,17 @@ function renderTrains(trains) {
                     <span>${t.wagons} wagon${t.wagons > 1 ? 's' : ''}</span>
                 </div>
             </div>`).join('') : empty;
+
+    // Stats rapides calculables maintenant
+    document.getElementById('stat-active').textContent = trains.length;
+    const moving = groups.moving;
+    if (moving.length) {
+        const avg = Math.round(moving.reduce((a, t) => a + t.speed, 0) / moving.length);
+        document.getElementById('stat-avg-speed').textContent = avg + ' km/h';
+    }
 }
 
-// ── Rendu historique (collapsible) ───────────────────────────
-// Mémorise les sections ouvertes entre les refreshs
+// ── Rendu historique ─────────────────────────────────────────
 const openCards = new Set();
 
 function renderTrips(trips) {
@@ -178,7 +268,9 @@ function renderTrips(trips) {
         return;
     }
 
+    let totalTrips = 0;
     let html = '';
+
     for (const [trainName, segs] of entries) {
         const isOpen = openCards.has(trainName);
         const segEntries = Object.entries(segs || {});
@@ -186,6 +278,7 @@ function renderTrips(trips) {
 
         for (const [seg, tripArr] of segEntries) {
             if (!tripArr || !tripArr.length) continue;
+            totalTrips += tripArr.length;
             const durations = tripArr.map(t => Number(t.duration));
             const mn = Math.min(...durations), mx = Math.max(...durations);
             const avg = Math.floor(durations.reduce((a, b) => a + b, 0) / durations.length);
@@ -210,7 +303,9 @@ function renderTrips(trips) {
                 <div class="segments ${isOpen ? 'open' : ''}">${segHtml || '<div class="empty-row">Aucun segment</div>'}</div>
             </div>`;
     }
+
     container.innerHTML = html;
+    document.getElementById('stat-total-trips').textContent = totalTrips;
 }
 
 function toggleCard(el, name) {
@@ -219,11 +314,6 @@ function toggleCard(el, name) {
     seg.classList.toggle('open', open);
     el.classList.toggle('open', open);
     open ? openCards.add(name) : openCards.delete(name);
-}
-
-// ── Échappement HTML basique ─────────────────────────────────
-function esc(s) {
-    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 // ── Boucle de rafraîchissement ───────────────────────────────
@@ -255,7 +345,6 @@ async function refresh() {
     }
 }
 
-// Premier appel immédiat, puis toutes les 2s
 refresh();
 setInterval(refresh, 2000);
 </script>
