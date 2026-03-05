@@ -84,12 +84,14 @@ def build_embed():
     total = len(trains)
     embed = discord.Embed(
         title="🚂  TRAIN MONITOR — Satisfactory",
-        description=f"**{total}** train{'s' if total != 1 else ''} sur le réseau",
+        description=(
+            f"**{total}** train{'s' if total != 1 else ''} sur le réseau\n\n"
+            f"🔴  À l'arrêt **{groups['stopped']}**"
+            f"　　🟢  En mouvement **{groups['moving']}**"
+            f"　　🔵  À quai **{groups['docked']}**"
+        ),
         color=0xff8800
     )
-    embed.add_field(name="🔴  À l'arrêt",   value=f"**{groups['stopped']}**", inline=True)
-    embed.add_field(name="🟢  En mouvement", value=f"**{groups['moving']}**",  inline=True)
-    embed.add_field(name="🔵  À quai",       value=f"**{groups['docked']}**",  inline=True)
     embed.set_footer(text="Mis à jour")
     embed.timestamp = datetime.utcnow()
     return embed
