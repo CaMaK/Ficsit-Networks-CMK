@@ -48,6 +48,18 @@ header h1 { color: #ff8800; font-size: 1.25em; letter-spacing: 3px; font-weight:
     padding: 12px 16px; font-size: 0.82em; font-weight: 700;
     letter-spacing: 1.5px; display: flex; justify-content: space-between; align-items: center;
 }
+.col-label-icon { display: none; font-size: 1.3em; line-height: 1; }
+
+@media (max-width: 600px) {
+    .columns { gap: 6px; }
+    .col-header { padding: 10px 8px; justify-content: center; gap: 6px; letter-spacing: 0; }
+    .col-label-full { display: none; }
+    .col-label-icon { display: inline; }
+    .train-row { padding: 7px 8px; }
+    .train-name { font-size: 0.82em; }
+    .train-sub  { font-size: 0.7em; }
+    .page { padding: 8px; }
+}
 .col-header.moving  { background:#091209; color:#33ff55; border-bottom:2px solid #33ff55; }
 .col-header.docked  { background:#09090f; color:#4499ff; border-bottom:2px solid #4499ff; }
 .col-header.stopped { background:#120909; color:#ff4444; border-bottom:2px solid #ff4444; }
@@ -127,15 +139,15 @@ header h1 { color: #ff8800; font-size: 1.25em; letter-spacing: 3px; font-weight:
 <div id="page-monitor" class="page active">
     <div class="columns">
         <div class="col">
-            <div class="col-header stopped">À L'ARRÊT <span class="badge" id="cnt-stopped">0</span></div>
+            <div class="col-header stopped"><span class="col-label-full">À L'ARRÊT</span><span class="col-label-icon">🔴</span><span class="badge" id="cnt-stopped">0</span></div>
             <div id="col-stopped"></div>
         </div>
         <div class="col">
-            <div class="col-header moving">EN MOUVEMENT <span class="badge" id="cnt-moving">0</span></div>
+            <div class="col-header moving"><span class="col-label-full">EN MOUVEMENT</span><span class="col-label-icon">🟢</span><span class="badge" id="cnt-moving">0</span></div>
             <div id="col-moving"></div>
         </div>
         <div class="col">
-            <div class="col-header docked">À QUAI <span class="badge" id="cnt-docked">0</span></div>
+            <div class="col-header docked"><span class="col-label-full">À QUAI</span><span class="col-label-icon">🔵</span><span class="badge" id="cnt-docked">0</span></div>
             <div id="col-docked"></div>
         </div>
     </div>
